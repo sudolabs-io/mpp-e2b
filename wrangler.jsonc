@@ -1,0 +1,13 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "mpp-e2b",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-01-15",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"preview_urls": true,
+	"vars": {
+		"TEMPO_ENV": "moderato",
+		"PAYEE_ADDRESS": "0xca4e835F803cB0b7C428222B3A3B98518d4779Fe"
+	}
+}

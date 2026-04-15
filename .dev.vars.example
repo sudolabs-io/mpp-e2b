@@ -1,0 +1,3 @@
+MPPX_SECRET_KEY=your-mppx-secret-key
+E2B_API_KEY=e2b_your_api_key
+FEE_PAYER_PRIVATE_KEY=0x...
