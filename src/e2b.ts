@@ -53,7 +53,7 @@ function resolveCreatePrice(
 
 	return {
 		amount,
-		description: `Create sandbox — ${cpus} vCPU, ${memMB.toFixed(0)} MiB, ${timeout}s`,
+		description: `Create sandbox - ${cpus} vCPU, ${memMB.toFixed(0)} MiB, ${timeout}s`,
 	};
 }
 
@@ -70,7 +70,7 @@ function resolveExtendPrice(
 
 	return {
 		amount,
-		description: `Extend sandbox — ${addedSeconds}s`,
+		description: `Extend sandbox - ${addedSeconds}s`,
 	};
 }
 
