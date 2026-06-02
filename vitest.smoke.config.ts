@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		environment: "node",
-		include: ["scripts/smoke-e2b-proxy.smoke.ts"],
+		include: ["scripts/*.smoke.ts"],
 		testTimeout: 120_000,
 		hookTimeout: 120_000,
 	},
