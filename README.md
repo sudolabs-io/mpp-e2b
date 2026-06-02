@@ -58,7 +58,7 @@ pnpm run deploy:cf
 | `pnpm run deploy:cf` | Deploy to Cloudflare Workers |
 | `pnpm check` | Run typecheck, lint, and tests |
 | `pnpm run smoke:local -- --create` | Smoke test local Vercel with paid sandbox create/delete |
-| `pnpm run smoke:prod -- --create` | Smoke test production Vercel with paid sandbox create/delete |
+| `SMOKE_BASE_URL=https://your-deployment.vercel.app pnpm run smoke:prod -- --create` | Smoke test a deployed Vercel URL with paid sandbox create/delete |
 
 ## Secrets
 
