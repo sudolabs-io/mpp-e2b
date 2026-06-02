@@ -9,13 +9,16 @@
 		"dev:vercel": "vercel dev",
 		"dev:cf": "wrangler dev",
 		"typecheck": "tsc --noEmit",
-		"lint": "biome check src",
-		"lint:fix": "biome check --write src",
+		"lint": "biome check src scripts",
+		"lint:fix": "biome check --write src scripts",
 		"test": "vitest run --passWithNoTests",
 		"check": "pnpm typecheck && pnpm lint && pnpm test",
 		"deploy": "pnpm deploy:vercel",
 		"deploy:vercel": "vercel --prod",
-		"deploy:cf": "wrangler deploy"
+		"deploy:cf": "wrangler deploy",
+		"smoke": "node scripts/smoke-e2b-proxy.mjs",
+		"smoke:local": "node scripts/smoke-e2b-proxy.mjs --base-url http://localhost:3001",
+		"smoke:prod": "node scripts/smoke-e2b-proxy.mjs --base-url https://mpp-e2b.vercel.app"
 	},
 	"dependencies": {
 		"hono": "^4.6.0",

@@ -67,3 +67,21 @@ pnpm deploy:cf
 | `PAYEE_ADDRESS` | Wallet address to receive payments |
 | `FEE_PAYER_PRIVATE_KEY` | Private key for gas sponsoring (optional) |
 | `TEMPO_ENV` | `tempo` (mainnet) or `moderato` (testnet) |
+
+### Tempo Environments
+
+`TEMPO_ENV=moderato` uses Tempo testnet. Use it for local development, PR validation, and test payments with faucet-funded balances. No real funds are involved.
+
+`TEMPO_ENV=tempo` uses Tempo mainnet. Use it only for production deployments where payments should settle with real USDC.e to your `PAYEE_ADDRESS`.
+
+Keep local development on:
+
+```bash
+TEMPO_ENV=moderato
+```
+
+Switch production deployments to:
+
+```bash
+TEMPO_ENV=tempo
+```
