@@ -11,15 +11,14 @@ const rpcUrl = process.env.MPPX_RPC_URL ?? "https://rpc.moderato.tempo.xyz";
 const shouldCreate = envFlag("SMOKE_CREATE") || envFlag("SMOKE_FULL");
 const shouldRunFullLifecycle = envFlag("SMOKE_FULL");
 const timeout = Number(process.env.SMOKE_TIMEOUT ?? 60);
+const templateID = process.env.SMOKE_TEMPLATE_ID;
+// templateID is required by the proxy; default to E2B's `base` image.
+const createBody = { templateID: templateID ?? "base", timeout };
 
 const fakeSandboxId = "smoke-test-sandbox-id";
 const challengeRequests = [
 	["GET /sandboxes challenge", "/sandboxes"],
-	[
-		"POST /sandboxes challenge",
-		"/sandboxes",
-		{ method: "POST", body: { templateID: "base", timeout } },
-	],
+	["POST /sandboxes challenge", "/sandboxes", { method: "POST", body: createBody }],
 	["GET /sandboxes/:id challenge", `/sandboxes/${fakeSandboxId}`],
 	["DELETE /sandboxes/:id challenge", `/sandboxes/${fakeSandboxId}`, { method: "DELETE" }],
 	[
@@ -31,12 +30,12 @@ const challengeRequests = [
 	[
 		"POST /sandboxes/:id/refreshes challenge",
 		`/sandboxes/${fakeSandboxId}/refreshes`,
-		{ method: "POST", body: { duration: timeout } },
+		{ method: "POST", body: { duration: timeout }, expected: [404] },
 	],
 	[
 		"POST /sandboxes/:id/timeout challenge",
 		`/sandboxes/${fakeSandboxId}/timeout`,
-		{ method: "POST", body: { timeout } },
+		{ method: "POST", body: { timeout }, expected: [404] },
 	],
 	[
 		"POST /sandboxes/:id/snapshots challenge",
@@ -80,7 +79,7 @@ describe.sequential("E2B proxy smoke", () => {
 		const create = await expectMppx("paid POST /sandboxes", "/sandboxes", {
 			expected: [201],
 			method: "POST",
-			body: { templateID: "base", timeout },
+			body: createBody,
 		});
 		createdSandboxId = extractSandboxId(create.stdout);
 		expect(createdSandboxId, "Could not find sandboxID in create response.").toBeTruthy();
