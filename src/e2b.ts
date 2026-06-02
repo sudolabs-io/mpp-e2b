@@ -30,6 +30,9 @@ const MAX_TIMEOUT_S = 86400;
 const MAX_CPU = 8;
 const MAX_MEMORY_MB = 8192;
 
+type SandboxSpec = { cpuCount: number; memoryMB: number };
+type SandboxDetails = SandboxSpec & { metadata?: Record<string, string> };
+
 function positiveNumber(value: unknown, fallback: number, max: number): number {
 	const n = typeof value === "number" ? value : fallback;
 	if (!Number.isFinite(n) || n <= 0) {
@@ -74,22 +77,51 @@ function resolveExtendPrice(
 	};
 }
 
-/** Fetch sandbox details and verify the payer owns it. Returns sandbox spec. */
-async function assertSandboxOwned(
+async function getSandboxDetails(
 	apiKey: string,
 	sandboxId: string,
-	payer: string,
-): Promise<{ cpuCount: number; memoryMB: number }> {
+): Promise<SandboxDetails | null> {
 	const res = await fetch(`${E2B_API_BASE}/sandboxes/${sandboxId}`, {
 		headers: { "X-API-Key": apiKey },
 	});
-	if (!res.ok) throw new HTTPException(404, { message: "Sandbox not found" });
+	if (!res.ok) return null;
 
 	const data = (await res.json()) as {
 		metadata?: Record<string, string>;
 		cpuCount?: number;
 		memoryMB?: number;
 	};
+
+	return {
+		cpuCount: data.cpuCount ?? 2,
+		memoryMB: data.memoryMB ?? 512,
+		metadata: data.metadata,
+	};
+}
+
+async function getPricingSpec(
+	apiKey: string,
+	sandboxId: string,
+	req: Request,
+): Promise<SandboxSpec> {
+	const details = await getSandboxDetails(apiKey, sandboxId);
+	if (details) return details;
+
+	if (!req.headers.has("authorization")) {
+		return { cpuCount: 2, memoryMB: 512 };
+	}
+
+	throw new HTTPException(404, { message: "Sandbox not found" });
+}
+
+/** Fetch sandbox details and verify the payer owns it. Returns sandbox spec. */
+async function assertSandboxOwned(
+	apiKey: string,
+	sandboxId: string,
+	payer: string,
+): Promise<SandboxSpec> {
+	const data = await getSandboxDetails(apiKey, sandboxId);
+	if (!data) throw new HTTPException(404, { message: "Sandbox not found" });
 
 	if (data.metadata?.["mpp-payer"] !== payerTag(payer)) {
 		throw new HTTPException(404, { message: "Sandbox not found" });
@@ -115,10 +147,8 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 
 	/** Dynamic pricing for TTL refresh — charges based on sandbox spec × added time. */
 	const refreshHandler: Service.IntentHandler = async (req: Request) => {
-		const payer = getPayer(req);
-		if (!payer) throw new HTTPException(402, { message: "Payment required" });
 		const sandboxId = extractSandboxId(req.url);
-		const spec = await assertSandboxOwned(apiKey, sandboxId, payer);
+		const spec = await getPricingSpec(apiKey, sandboxId, req);
 		const body = await jsonBody<{ duration?: number }>(req);
 		const duration = positiveNumber(body.duration, 300, MAX_TIMEOUT_S);
 		const { amount, description } = resolveExtendPrice(duration, spec.cpuCount, spec.memoryMB);
@@ -127,10 +157,8 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 
 	/** Dynamic pricing for timeout set — charges based on sandbox spec × timeout. */
 	const timeoutHandler: Service.IntentHandler = async (req: Request) => {
-		const payer = getPayer(req);
-		if (!payer) throw new HTTPException(402, { message: "Payment required" });
 		const sandboxId = extractSandboxId(req.url);
-		const spec = await assertSandboxOwned(apiKey, sandboxId, payer);
+		const spec = await getPricingSpec(apiKey, sandboxId, req);
 		const body = await jsonBody<{ timeout?: number }>(req);
 		const timeout = positiveNumber(body.timeout, 300, MAX_TIMEOUT_S);
 		const { amount, description } = resolveExtendPrice(timeout, spec.cpuCount, spec.memoryMB);
@@ -246,5 +274,5 @@ function extractSandboxId(url: string): string {
 }
 
 function sandboxIdFromPath(path: string): string | null {
-	return path.match(/^\/(?:v2\/)?sandboxes\/([^/]+)/)?.[1] ?? null;
+	return path.match(/^\/(?:e2b\/)?(?:v2\/)?sandboxes\/([^/]+)/)?.[1] ?? null;
 }
