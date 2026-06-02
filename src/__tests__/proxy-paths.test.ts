@@ -4,7 +4,6 @@ import {
 	isOpenApiPath,
 	isServicePrefixedE2bPath,
 	shouldUseUnprefixedE2bPath,
-	stripServicePrefixFromOpenApi,
 } from "../proxy-paths.js";
 
 describe("isServicePrefixedE2bPath", () => {
@@ -56,32 +55,5 @@ describe("createProxyRequest", () => {
 			new Request("https://proxy.test/openapi.json", { method: "GET" }),
 		);
 		expect(new URL(req.url).pathname).toBe("/openapi.json");
-	});
-});
-
-describe("stripServicePrefixFromOpenApi", () => {
-	it("strips /e2b from path keys in the spec", async () => {
-		const response = new Response(
-			JSON.stringify({
-				paths: {
-					"/e2b/sandboxes": { get: {} },
-					"/health": { get: {} },
-				},
-			}),
-			{ headers: { "content-type": "application/json" }, status: 200 },
-		);
-
-		const stripped = await stripServicePrefixFromOpenApi(response);
-		const spec = (await stripped.json()) as { paths: Record<string, unknown> };
-
-		expect(spec.paths).toEqual({
-			"/sandboxes": { get: {} },
-			"/health": { get: {} },
-		});
-	});
-
-	it("returns non-json responses unchanged", async () => {
-		const response = new Response("not json", { status: 200 });
-		expect(await stripServicePrefixFromOpenApi(response)).toBe(response);
 	});
 });

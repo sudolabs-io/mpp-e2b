@@ -25,28 +25,3 @@ export function createProxyRequest(url: string, request: Request): Request {
 
 	return new Request(proxyUrl.toString(), request);
 }
-
-export async function stripServicePrefixFromOpenApi(response: Response): Promise<Response> {
-	const contentType = response.headers.get("content-type");
-	if (!response.ok || !contentType?.includes("application/json")) return response;
-
-	const spec = (await response.json()) as { paths?: Record<string, unknown> };
-	if (spec.paths) {
-		spec.paths = Object.fromEntries(
-			Object.entries(spec.paths).map(([path, value]) => [
-				path.startsWith(`${E2B_SERVICE_PREFIX}/`) ? path.slice(E2B_SERVICE_PREFIX.length) : path,
-				value,
-			]),
-		);
-	}
-
-	const headers = new Headers(response.headers);
-	headers.delete("content-length");
-	headers.set("content-type", "application/json");
-
-	return new Response(JSON.stringify(spec), {
-		headers,
-		status: response.status,
-		statusText: response.statusText,
-	});
-}
