@@ -33,7 +33,7 @@ Set secrets in `.env.local` for local development, or in the Vercel project envi
 
 ```bash
 pnpm dev
-pnpm deploy
+pnpm run deploy
 ```
 
 ### Cloudflare Workers
@@ -43,7 +43,7 @@ Set secrets in `.dev.vars` for local development, or with `wrangler secret put` 
 ```bash
 cp .dev.vars.example .dev.vars
 pnpm dev:cf
-pnpm deploy:cf
+pnpm run deploy:cf
 ```
 
 ## Scripts
@@ -52,11 +52,13 @@ pnpm deploy:cf
 |---------|--------|
 | `pnpm dev` | Alias for `pnpm dev:vercel` |
 | `pnpm dev:vercel` | Run locally with Vercel Functions |
-| `pnpm deploy` | Alias for `pnpm deploy:vercel` |
-| `pnpm deploy:vercel` | Deploy to Vercel |
+| `pnpm run deploy` | Alias for `pnpm run deploy:vercel` |
+| `pnpm run deploy:vercel` | Deploy to Vercel |
 | `pnpm dev:cf` | Run locally with Cloudflare Workers |
-| `pnpm deploy:cf` | Deploy to Cloudflare Workers |
+| `pnpm run deploy:cf` | Deploy to Cloudflare Workers |
 | `pnpm check` | Run typecheck, lint, and tests |
+| `pnpm run smoke:local -- --create` | Smoke test local Vercel with paid sandbox create/delete |
+| `pnpm run smoke:prod -- --create` | Smoke test production Vercel with paid sandbox create/delete |
 
 ## Secrets
 

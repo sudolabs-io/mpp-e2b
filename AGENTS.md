@@ -28,7 +28,7 @@ pnpm lint # biome check
 
 ```bash
 pnpm dev # Vercel local dev
-pnpm deploy # Vercel production deploy
+pnpm run deploy # Vercel production deploy
 pnpm dev:cf # Cloudflare local dev
-pnpm deploy:cf # Cloudflare deploy
+pnpm run deploy:cf # Cloudflare deploy
 ```
