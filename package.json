@@ -16,9 +16,9 @@
 		"deploy": "pnpm deploy:vercel",
 		"deploy:vercel": "vercel --prod",
 		"deploy:cf": "wrangler deploy",
-		"smoke": "node scripts/smoke-e2b-proxy.mjs",
-		"smoke:local": "node scripts/smoke-e2b-proxy.mjs --base-url http://localhost:3000",
-		"smoke:prod": "node scripts/smoke-e2b-proxy.mjs"
+		"smoke": "node scripts/smoke-e2b-proxy.js",
+		"smoke:local": "node scripts/smoke-e2b-proxy.js --base-url http://localhost:3000",
+		"smoke:prod": "node scripts/smoke-e2b-proxy.js"
 	},
 	"dependencies": {
 		"hono": "^4.6.0",
