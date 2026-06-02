@@ -1,6 +1,6 @@
 # mpp-e2b
 
-Pay-per-use [E2B](https://e2b.dev) cloud sandbox proxy built with [mppx](https://github.com/wevm/mppx). Deploys to Cloudflare Workers.
+Pay-per-use [E2B](https://e2b.dev) cloud sandbox proxy built with [mppx](https://github.com/wevm/mppx). Deploy it on either Vercel Functions or Cloudflare Workers.
 
 Create, manage, and execute code in isolated E2B sandboxes — pay with crypto via the [Machine Payments Protocol](https://mpp.dev).
 
@@ -25,17 +25,38 @@ Create, manage, and execute code in isolated E2B sandboxes — pay with crypto v
 
 ```bash
 pnpm install
+```
 
-# Local dev (set secrets in .dev.vars)
-cp .dev.vars.example .dev.vars
+### Vercel Functions
+
+Set secrets in `.env.local` for local development, or in the Vercel project environment for deployments.
+
+```bash
 pnpm dev
-
-# Deploy
-wrangler secret put MPPX_SECRET_KEY
-wrangler secret put E2B_API_KEY
-wrangler secret put FEE_PAYER_PRIVATE_KEY
 pnpm deploy
 ```
+
+### Cloudflare Workers
+
+Set secrets in `.dev.vars` for local development, or with `wrangler secret put` for deployments.
+
+```bash
+cp .dev.vars.example .dev.vars
+pnpm dev:cf
+pnpm deploy:cf
+```
+
+## Scripts
+
+| Command | Target |
+|---------|--------|
+| `pnpm dev` | Alias for `pnpm dev:vercel` |
+| `pnpm dev:vercel` | Run locally with Vercel Functions |
+| `pnpm deploy` | Alias for `pnpm deploy:vercel` |
+| `pnpm deploy:vercel` | Deploy to Vercel |
+| `pnpm dev:cf` | Run locally with Cloudflare Workers |
+| `pnpm deploy:cf` | Deploy to Cloudflare Workers |
+| `pnpm check` | Run typecheck, lint, and tests |
 
 ## Secrets
 
