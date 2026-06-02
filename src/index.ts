@@ -6,6 +6,12 @@ import type { Env } from "./env.js";
 import { envFromRuntime } from "./env.js";
 import { createMppx } from "./mppx.js";
 import { extractPayerAddress } from "./payer.js";
+import {
+	createProxyRequest,
+	isOpenApiPath,
+	isServicePrefixedE2bPath,
+	stripServicePrefixFromOpenApi,
+} from "./proxy-paths.js";
 
 const app = new Hono<{ Bindings: Partial<Env> }>();
 
@@ -50,56 +56,5 @@ app.all("*", async (c) => {
 
 	return res;
 });
-
-function isServicePrefixedE2bPath(pathname: string): boolean {
-	return pathname === "/e2b" || pathname.startsWith("/e2b/");
-}
-
-function isOpenApiPath(pathname: string): boolean {
-	return pathname === "/openapi.json" || pathname === "/openapi.json/";
-}
-
-async function stripServicePrefixFromOpenApi(response: Response): Promise<Response> {
-	const contentType = response.headers.get("content-type");
-	if (!response.ok || !contentType?.includes("application/json")) return response;
-
-	const spec = (await response.json()) as { paths?: Record<string, unknown> };
-	if (spec.paths) {
-		spec.paths = Object.fromEntries(
-			Object.entries(spec.paths).map(([path, value]) => [
-				path.startsWith("/e2b/") ? path.slice("/e2b".length) : path,
-				value,
-			]),
-		);
-	}
-
-	const headers = new Headers(response.headers);
-	headers.delete("content-length");
-	headers.set("content-type", "application/json");
-
-	return new Response(JSON.stringify(spec), {
-		headers,
-		status: response.status,
-		statusText: response.statusText,
-	});
-}
-
-function createProxyRequest(url: string, request: Request): Request {
-	const proxyUrl = new URL(url);
-
-	if (shouldUseUnprefixedE2bPath(proxyUrl.pathname)) {
-		proxyUrl.pathname = `/e2b${proxyUrl.pathname}`;
-	}
-
-	return new Request(proxyUrl.toString(), request);
-}
-
-function shouldUseUnprefixedE2bPath(pathname: string): boolean {
-	return (
-		pathname === "/sandboxes" ||
-		pathname.startsWith("/sandboxes/") ||
-		pathname.startsWith("/v2/sandboxes/")
-	);
-}
 
 export default app;
