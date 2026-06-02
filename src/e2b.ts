@@ -3,6 +3,7 @@ import { custom, type Service } from "mppx/proxy";
 import type { Env } from "./env.js";
 import { jsonBody, type ServiceMppx } from "./mppx.js";
 import { getPayer, payerTag } from "./payer.js";
+import { PUBLIC_TEMPLATE_NAMES, PUBLIC_TEMPLATE_SPECS } from "./public-templates.js";
 
 const E2B_API_BASE = "https://api.e2b.dev";
 
@@ -27,11 +28,13 @@ const GIB_RAM_RATE = 0.0000208;
 
 /** E2B limits */
 const MAX_TIMEOUT_S = 86400;
-const MAX_CPU = 8;
-const MAX_MEMORY_MB = 8192;
 
-type SandboxSpec = { cpuCount: number; memoryMB: number };
-type SandboxDetails = SandboxSpec & { metadata?: Record<string, string> };
+export type SandboxSpec = { cpuCount: number; memoryMB: number };
+type SandboxDetails = {
+	cpuCount?: number;
+	memoryMB?: number;
+	metadata?: Record<string, string>;
+};
 
 function positiveNumber(value: unknown, fallback: number, max: number): number {
 	const n = typeof value === "number" ? value : fallback;
@@ -41,38 +44,30 @@ function positiveNumber(value: unknown, fallback: number, max: number): number {
 	return Math.min(n, max);
 }
 
+/** Compute the USDC charge for running `spec` for `seconds`, with margin and a floor. */
+function computeComputeCost(spec: SandboxSpec, seconds: number): string {
+	const memGiB = spec.memoryMB / 1024;
+	const cost = (spec.cpuCount * VCPU_RATE + memGiB * GIB_RAM_RATE) * seconds;
+	return Math.max(cost * 1.3, 0.001).toFixed(6);
+}
+
 function resolveCreatePrice(
 	timeout: number,
-	cpuCount?: number,
-	memoryMB?: number,
+	spec: SandboxSpec,
 ): { amount: string; description: string } {
-	const cpus = positiveNumber(cpuCount, 2, MAX_CPU);
-	const memMB = positiveNumber(memoryMB, 512, MAX_MEMORY_MB);
-	const memGiB = memMB / 1024;
-
-	const cost = (cpus * VCPU_RATE + memGiB * GIB_RAM_RATE) * timeout;
-	const withMargin = cost * 1.3;
-	const amount = Math.max(withMargin, 0.001).toFixed(6);
-
 	return {
-		amount,
-		description: `Create sandbox - ${cpus} vCPU, ${memMB.toFixed(0)} MiB, ${timeout}s`,
+		amount: computeComputeCost(spec, timeout),
+		description: `Create sandbox - ${spec.cpuCount} vCPU, ${spec.memoryMB} MiB, ${timeout}s`,
 	};
 }
 
 /** Resolve pricing for extending a sandbox's TTL. */
 function resolveExtendPrice(
 	addedSeconds: number,
-	cpuCount: number,
-	memoryMB: number,
+	spec: SandboxSpec,
 ): { amount: string; description: string } {
-	const memGiB = memoryMB / 1024;
-	const cost = (cpuCount * VCPU_RATE + memGiB * GIB_RAM_RATE) * addedSeconds;
-	const withMargin = cost * 1.3;
-	const amount = Math.max(withMargin, 0.001).toFixed(6);
-
 	return {
-		amount,
+		amount: computeComputeCost(spec, addedSeconds),
 		description: `Extend sandbox - ${addedSeconds}s`,
 	};
 }
@@ -86,82 +81,122 @@ async function getSandboxDetails(
 	});
 	if (!res.ok) return null;
 
-	const data = (await res.json()) as {
-		metadata?: Record<string, string>;
-		cpuCount?: number;
-		memoryMB?: number;
-	};
-
-	return {
-		cpuCount: data.cpuCount ?? 2,
-		memoryMB: data.memoryMB ?? 512,
-		metadata: data.metadata,
-	};
+	return (await res.json()) as SandboxDetails;
 }
 
-async function getPricingSpec(
-	apiKey: string,
-	sandboxId: string,
-	req: Request,
-): Promise<SandboxSpec> {
-	const details = await getSandboxDetails(apiKey, sandboxId);
-	if (details) return details;
+type TemplateListItem = {
+	templateID?: string;
+	aliases?: string[];
+	cpuCount?: number;
+	memoryMB?: number;
+};
 
-	if (!req.headers.has("authorization")) {
-		return { cpuCount: 2, memoryMB: 512 };
+/**
+ * Resolve a template's real CPU/RAM spec. E2B fixes resources at template build
+ * time — they cannot be set per sandbox — so create pricing must come from here,
+ * never from the request body.
+ */
+async function getTemplateSpec(apiKey: string, templateId: string): Promise<SandboxSpec | null> {
+	const res = await fetch(`${E2B_API_BASE}/templates`, {
+		headers: { "X-API-Key": apiKey },
+	});
+	if (!res.ok) return null;
+
+	const templates = (await res.json()) as TemplateListItem[];
+	if (!Array.isArray(templates)) return null;
+
+	// Callers may pass either the raw templateID or a human-friendly alias.
+	const match = templates.find(
+		(t) => t.templateID === templateId || t.aliases?.includes(templateId),
+	);
+	if (!match) return null;
+
+	if (typeof match.cpuCount !== "number" || typeof match.memoryMB !== "number") {
+		throw new HTTPException(502, { message: "Template spec unavailable" });
 	}
 
-	throw new HTTPException(404, { message: "Sandbox not found" });
+	return { cpuCount: match.cpuCount, memoryMB: match.memoryMB };
 }
 
-/** Fetch sandbox details and verify the payer owns it. Returns sandbox spec. */
-async function assertSandboxOwned(
+/** Spec to price a create request on — the chosen template's, or `base`. */
+async function resolveCreateSpec(
 	apiKey: string,
-	sandboxId: string,
-	payer: string,
+	templateId: string | undefined,
 ): Promise<SandboxSpec> {
+	// E2B rejects a create with no templateID, so we reject here too — before
+	// charging — rather than price a request that would fail upstream.
+	if (!templateId) {
+		throw new HTTPException(400, {
+			message: `templateID is required. Use a public template (${PUBLIC_TEMPLATE_NAMES}).`,
+		});
+	}
+
+	// Public templates aren't in the team-scoped /templates and have no spec
+	// endpoint, so their specs are pinned in PUBLIC_TEMPLATE_SPECS. We check the
+	// pinned table first; this assumes the operator has no team template whose alias
+	// collides with a public name (e.g. "claude"). If that ever happens, a colliding
+	// team template would be priced from the public table — resolve via /templates
+	// first instead.
+	const publicSpec = PUBLIC_TEMPLATE_SPECS.get(templateId);
+	if (publicSpec) return publicSpec;
+
+	const spec = await getTemplateSpec(apiKey, templateId);
+	if (spec) return spec;
+	throw new HTTPException(400, {
+		message: `Unknown templateID "${templateId}". Use a public template (${PUBLIC_TEMPLATE_NAMES}).`,
+	});
+}
+
+async function getPricingSpec(apiKey: string, sandboxId: string): Promise<SandboxSpec> {
+	const details = await getSandboxDetails(apiKey, sandboxId);
+	if (!details) throw new HTTPException(404, { message: "Sandbox not found" });
+
+	// A running sandbox's SandboxDetail always carries its spec; if it somehow
+	// doesn't, fail closed rather than invent a price.
+	if (typeof details.cpuCount !== "number" || typeof details.memoryMB !== "number") {
+		throw new HTTPException(502, { message: "Sandbox spec unavailable" });
+	}
+	return { cpuCount: details.cpuCount, memoryMB: details.memoryMB };
+}
+
+/** Fetch sandbox details and verify the payer owns it. */
+async function assertSandboxOwned(apiKey: string, sandboxId: string, payer: string): Promise<void> {
 	const data = await getSandboxDetails(apiKey, sandboxId);
 	if (!data) throw new HTTPException(404, { message: "Sandbox not found" });
 
 	if (data.metadata?.["mpp-payer"] !== payerTag(payer)) {
 		throw new HTTPException(404, { message: "Sandbox not found" });
 	}
-
-	return { cpuCount: data.cpuCount ?? 2, memoryMB: data.memoryMB ?? 512 };
 }
 
 export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 	const apiKey = env.E2B_API_KEY;
 
 	const createHandler: Service.IntentHandler = async (req: Request) => {
-		const body = await jsonBody<{
-			timeout?: number;
-			templateID?: string;
-			cpuCount?: number;
-			memoryMB?: number;
-		}>(req);
+		const body = await jsonBody<{ timeout?: number; templateID?: string }>(req);
 		const timeout = positiveNumber(body.timeout, 300, MAX_TIMEOUT_S);
-		const { amount, description } = resolveCreatePrice(timeout, body.cpuCount, body.memoryMB);
+		const spec = await resolveCreateSpec(apiKey, body.templateID);
+		const { amount, description } = resolveCreatePrice(timeout, spec);
 		return mppx.charge({ amount, description })(req);
 	};
 
 	/** Dynamic pricing for TTL refresh — charges based on sandbox spec × added time. */
 	const refreshHandler: Service.IntentHandler = async (req: Request) => {
 		const sandboxId = extractSandboxId(req.url);
-		const spec = await getPricingSpec(apiKey, sandboxId, req);
+		const spec = await getPricingSpec(apiKey, sandboxId);
 		const body = await jsonBody<{ duration?: number }>(req);
 		const duration = positiveNumber(body.duration, 300, MAX_TIMEOUT_S);
-		const { amount, description } = resolveExtendPrice(duration, spec.cpuCount, spec.memoryMB);
+		const { amount, description } = resolveExtendPrice(duration, spec);
 		return mppx.charge({ amount, description })(req);
 	};
 
 	/** Dynamic pricing for timeout set — charges based on sandbox spec × timeout. */
 	const timeoutHandler: Service.IntentHandler = async (req: Request) => {
 		const sandboxId = extractSandboxId(req.url);
-		const spec = await getPricingSpec(apiKey, sandboxId, req);
+		const spec = await getPricingSpec(apiKey, sandboxId);
 		const body = await jsonBody<{ timeout?: number }>(req);
 		const timeout = positiveNumber(body.timeout, 300, MAX_TIMEOUT_S);
-		const { amount, description } = resolveExtendPrice(timeout, spec.cpuCount, spec.memoryMB);
+		const { amount, description } = resolveExtendPrice(timeout, spec);
 		return mppx.charge({ amount, description })(req);
 	};
 

@@ -110,6 +110,28 @@ describe("createE2bService dynamic pricing", () => {
 		);
 	}
 
+	function mockTemplates(list: unknown[]) {
+		return vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify(list), {
+				headers: { "content-type": "application/json" },
+				status: 200,
+			}),
+		);
+	}
+
+	function createSandbox(service: Service.Service, body: Record<string, unknown>) {
+		return routeHandler(
+			service,
+			"POST /sandboxes",
+		)(
+			new Request("https://proxy.test/sandboxes", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			}),
+		);
+	}
+
 	it("prices /timeout from the real sandbox spec", async () => {
 		const fetchMock = mockSandbox({ cpuCount: 4, memoryMB: 2048 });
 		const { build, calls } = recordingCharge();
@@ -153,25 +175,25 @@ describe("createE2bService dynamic pricing", () => {
 		expect(calls).toEqual([{ amount: "0.713856", description: "Extend sandbox - 600s" }]);
 	});
 
-	it("falls back to the default spec for an unpaid challenge", async () => {
-		// Sandbox lookup fails and the request carries no payment authorization.
+	it("rejects missing sandboxes before charging", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 404 }));
 		const { build, calls } = recordingCharge();
 		const service = build(env);
 
-		await routeHandler(
-			service,
-			"POST /sandboxes/:sandboxID/timeout",
-		)(
-			new Request("https://proxy.test/sandboxes/sb_123/timeout", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ timeout: 300 }),
-			}),
-		);
+		await expect(
+			routeHandler(
+				service,
+				"POST /sandboxes/:sandboxID/timeout",
+			)(
+				new Request("https://proxy.test/sandboxes/sb_123/timeout", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ timeout: 300 }),
+				}),
+			),
+		).rejects.toThrow("Sandbox not found");
 
-		// Default 2 vCPU + 512 MiB over 300s with 30% margin
-		expect(calls).toEqual([{ amount: "0.085176", description: "Extend sandbox - 300s" }]);
+		expect(calls).toEqual([]);
 	});
 
 	it("rejects a paid request for a missing sandbox", async () => {
@@ -193,5 +215,140 @@ describe("createE2bService dynamic pricing", () => {
 			),
 		).rejects.toThrow("Sandbox not found");
 		expect(calls).toEqual([]);
+	});
+
+	it("prices create from the template's real spec", async () => {
+		const fetchMock = mockTemplates([{ templateID: "tpl_big", cpuCount: 4, memoryMB: 4096 }]);
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await createSandbox(service, { templateID: "tpl_big", timeout: 600 });
+
+		expect(fetchMock).toHaveBeenCalledWith("https://api.e2b.dev/templates", {
+			headers: { "X-API-Key": env.E2B_API_KEY },
+		});
+		// 4 vCPU + 4 GiB over 600s with 30% margin
+		expect(calls).toEqual([
+			{ amount: "0.389376", description: "Create sandbox - 4 vCPU, 4096 MiB, 600s" },
+		]);
+	});
+
+	it("does not trust client-supplied specs in the create body", async () => {
+		// The request body is attacker-controlled: a caller can send any cpuCount/memoryMB
+		// even though E2B ignores them and fixes resources at the template. Pricing must come
+		// from the template spec, never the body — otherwise a caller could forge a cheap price.
+		mockTemplates([{ templateID: "tpl_base", cpuCount: 2, memoryMB: 512 }]);
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await createSandbox(service, {
+			templateID: "tpl_base",
+			cpuCount: 1,
+			memoryMB: 128,
+			timeout: 600,
+		});
+
+		// Priced from the template (2/512), not the inflated-cheap body (1/128).
+		expect(calls).toEqual([
+			{ amount: "0.170352", description: "Create sandbox - 2 vCPU, 512 MiB, 600s" },
+		]);
+	});
+
+	it("rejects templates without a top-level pricing spec", async () => {
+		mockTemplates([
+			{
+				templateID: "tpl_b",
+			},
+		]);
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await expect(createSandbox(service, { templateID: "tpl_b", timeout: 300 })).rejects.toThrow(
+			"Template spec unavailable",
+		);
+
+		expect(calls).toEqual([]);
+	});
+
+	it("rejects an unknown templateID before charging", async () => {
+		mockTemplates([{ templateID: "tpl_other", cpuCount: 8, memoryMB: 8192 }]);
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await expect(createSandbox(service, { templateID: "ghost", timeout: 600 })).rejects.toThrow(
+			'Unknown templateID "ghost"',
+		);
+
+		expect(calls).toEqual([]);
+	});
+
+	it("rejects a create with no templateID before charging", async () => {
+		// E2B requires a templateID, so we reject up front rather than charge for a
+		// create that would 400 upstream.
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await expect(createSandbox(service, { timeout: 600 })).rejects.toThrow(
+			"templateID is required",
+		);
+
+		expect(calls).toEqual([]);
+		expect(fetchMock).not.toHaveBeenCalled(); // no template lookup needed
+	});
+
+	it("prices a public template statically without a template lookup", async () => {
+		// Public templates aren't in GET /templates; their specs come from the pinned
+		// allowlist (base = 2/512), so no lookup happens.
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await createSandbox(service, { templateID: "base", timeout: 600 });
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(calls).toEqual([
+			{ amount: "0.170352", description: "Create sandbox - 2 vCPU, 512 MiB, 600s" },
+		]);
+	});
+
+	it("prices public templates by alias and by raw templateID", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		// opencode alias → 2 vCPU / 2048 MiB
+		await createSandbox(service, { templateID: "opencode", timeout: 600 });
+		// claude alias → 4 vCPU / 8192 MiB
+		await createSandbox(service, { templateID: "claude-code", timeout: 600 });
+		// raw templateID for desktop → 8 vCPU / 8192 MiB
+		await createSandbox(service, { templateID: "k0wmnzir0zuzye6dndlw", timeout: 600 });
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(calls).toEqual([
+			{ amount: "0.194688", description: "Create sandbox - 2 vCPU, 2048 MiB, 600s" },
+			{ amount: "0.454272", description: "Create sandbox - 4 vCPU, 8192 MiB, 600s" },
+			{ amount: "0.778752", description: "Create sandbox - 8 vCPU, 8192 MiB, 600s" },
+		]);
+	});
+
+	it("resolves a template by its alias", async () => {
+		mockTemplates([
+			{
+				templateID: "jzk29sq3bltm1c3ghdpx",
+				aliases: ["project-harness"],
+				cpuCount: 4,
+				memoryMB: 2048,
+			},
+		]);
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await createSandbox(service, { templateID: "project-harness", timeout: 600 });
+
+		// Priced from the aliased template (4/2048), proving alias matching works.
+		expect(calls).toEqual([
+			{ amount: "0.356928", description: "Create sandbox - 4 vCPU, 2048 MiB, 600s" },
+		]);
 	});
 });
