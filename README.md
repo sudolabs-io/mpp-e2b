@@ -60,6 +60,37 @@ pnpm run deploy:cf
 | `pnpm run smoke:local -- --create` | Smoke test local Vercel with paid sandbox create/delete |
 | `SMOKE_BASE_URL=https://your-deployment.vercel.app pnpm run smoke:prod -- --create` | Smoke test a deployed Vercel URL with paid sandbox create/delete |
 
+## Testing
+
+Two layers, kept separate by two Vitest configs so the fast suite stays offline and free.
+
+### Unit tests
+
+Live in `src/__tests__/*.test.ts`. They run against `vitest.config.ts`, mock `fetch` and `mppx.charge`, and never touch the network or spend funds. They cover pure logic such as payer tagging and the dynamic pricing branches (real sandbox spec vs. default-spec fallback vs. 404 for a paid request to a missing sandbox). Run them with:
+
+```bash
+pnpm test       # or: pnpm check (typecheck + lint + tests)
+```
+
+### Smoke tests
+
+Live in `scripts/smoke-e2b-proxy.smoke.ts` and run against a **real deployment** via `vitest.smoke.config.ts` (excluded from the unit suite). The `scripts/smoke-e2b-proxy.js` wrapper translates CLI flags into `SMOKE_*` env vars and launches the runner. Unpaid requests assert `402` on every route; paid requests shell out to the real `mppx` CLI, which performs the full pay-and-retry handshake against the Tempo testnet.
+
+```bash
+pnpm run smoke:local                                                  # challenges + paid GET only (creates nothing)
+pnpm run smoke:local -- --create                                      # also create / get / delete a sandbox
+pnpm run smoke:local -- --full                                        # full lifecycle (logs, metrics, timeout, refreshes, pause, connect)
+SMOKE_BASE_URL=https://your-deployment.vercel.app pnpm run smoke:prod -- --full
+```
+
+| Flag | Adds |
+|------|------|
+| _(none)_ | OpenAPI surface check, `402` challenge on every route, paid `GET /sandboxes` |
+| `--create` | paid create → get → delete of a sandbox |
+| `--full` | full lifecycle endpoints on the created sandbox, with `afterAll` cleanup |
+
+Other flags: `--base-url`, `--account`, `--rpc-url`, `--timeout`.
+
 ## Secrets
 
 | Variable | Description |
