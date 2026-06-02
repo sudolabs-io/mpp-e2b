@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile);
 
 const args = parseArgs(process.argv.slice(2));
 const baseUrl = trimTrailingSlash(
-	args["base-url"] ?? process.env.SMOKE_BASE_URL ?? "http://localhost:3001",
+	args["base-url"] ?? process.env.SMOKE_BASE_URL ?? "http://localhost:3000",
 );
 const account = args.account ?? process.env.MPPX_ACCOUNT ?? "local-test";
 const rpcUrl = args["rpc-url"] ?? process.env.MPPX_RPC_URL ?? "https://rpc.moderato.tempo.xyz";
@@ -16,7 +16,43 @@ const shouldRunFullLifecycle = Boolean(args.full);
 const timeout = Number(args.timeout ?? 60);
 
 const fakeSandboxId = "smoke-test-sandbox-id";
+const challengeRequests = [
+	["GET /sandboxes challenge", "/sandboxes"],
+	[
+		"POST /sandboxes challenge",
+		"/sandboxes",
+		{ method: "POST", body: { templateID: "base", timeout } },
+	],
+	["GET /sandboxes/:id challenge", `/sandboxes/${fakeSandboxId}`],
+	["DELETE /sandboxes/:id challenge", `/sandboxes/${fakeSandboxId}`, { method: "DELETE" }],
+	[
+		"POST /sandboxes/:id/connect challenge",
+		`/sandboxes/${fakeSandboxId}/connect`,
+		{ method: "POST" },
+	],
+	["POST /sandboxes/:id/pause challenge", `/sandboxes/${fakeSandboxId}/pause`, { method: "POST" }],
+	[
+		"POST /sandboxes/:id/refreshes challenge",
+		`/sandboxes/${fakeSandboxId}/refreshes`,
+		{ method: "POST", body: { duration: timeout } },
+	],
+	[
+		"POST /sandboxes/:id/timeout challenge",
+		`/sandboxes/${fakeSandboxId}/timeout`,
+		{ method: "POST", body: { timeout } },
+	],
+	[
+		"POST /sandboxes/:id/snapshots challenge",
+		`/sandboxes/${fakeSandboxId}/snapshots`,
+		{ method: "POST" },
+	],
+	["GET /sandboxes/:id/logs challenge", `/sandboxes/${fakeSandboxId}/logs`],
+	["GET /v2/sandboxes/:id/logs challenge", `/v2/sandboxes/${fakeSandboxId}/logs`],
+	["GET /sandboxes/:id/metrics challenge", `/sandboxes/${fakeSandboxId}/metrics`],
+];
 let createdSandboxId;
+let smokeFailed = false;
+let cleanupError;
 
 try {
 	console.log(`Smoke testing ${baseUrl}`);
@@ -27,66 +63,9 @@ try {
 	await assertOpenApiPaths();
 	await expectFetch("GET /e2b/sandboxes is hidden", "/e2b/sandboxes", { expected: [404] });
 
-	await expectFetch("GET /sandboxes challenge", "/sandboxes", { expected: [402] });
-	await expectFetch("POST /sandboxes challenge", "/sandboxes", {
-		expected: [402],
-		method: "POST",
-		body: { templateID: "base", timeout },
-	});
-	await expectFetch("GET /sandboxes/:id challenge", `/sandboxes/${fakeSandboxId}`, {
-		expected: [402],
-	});
-	await expectFetch("DELETE /sandboxes/:id challenge", `/sandboxes/${fakeSandboxId}`, {
-		expected: [402],
-		method: "DELETE",
-	});
-	await expectFetch(
-		"POST /sandboxes/:id/connect challenge",
-		`/sandboxes/${fakeSandboxId}/connect`,
-		{
-			expected: [402],
-			method: "POST",
-		},
-	);
-	await expectFetch("POST /sandboxes/:id/pause challenge", `/sandboxes/${fakeSandboxId}/pause`, {
-		expected: [402],
-		method: "POST",
-	});
-	await expectFetch(
-		"POST /sandboxes/:id/refreshes challenge",
-		`/sandboxes/${fakeSandboxId}/refreshes`,
-		{
-			expected: [402],
-			method: "POST",
-			body: { duration: timeout },
-		},
-	);
-	await expectFetch(
-		"POST /sandboxes/:id/timeout challenge",
-		`/sandboxes/${fakeSandboxId}/timeout`,
-		{
-			expected: [402],
-			method: "POST",
-			body: { timeout },
-		},
-	);
-	await expectFetch(
-		"POST /sandboxes/:id/snapshots challenge",
-		`/sandboxes/${fakeSandboxId}/snapshots`,
-		{
-			expected: [402],
-			method: "POST",
-		},
-	);
-	await expectFetch("GET /sandboxes/:id/logs challenge", `/sandboxes/${fakeSandboxId}/logs`, {
-		expected: [402],
-	});
-	await expectFetch("GET /v2/sandboxes/:id/logs challenge", `/v2/sandboxes/${fakeSandboxId}/logs`, {
-		expected: [402],
-	});
-	await expectFetch("GET /sandboxes/:id/metrics challenge", `/sandboxes/${fakeSandboxId}/metrics`, {
-		expected: [402],
-	});
+	for (const [name, path, options = {}] of challengeRequests) {
+		await expectFetch(name, path, { expected: [402], ...options });
+	}
 
 	await expectMppx("paid GET /sandboxes", "/sandboxes", { expected: [200] });
 
@@ -155,14 +134,26 @@ try {
 			);
 		}
 	}
+} catch (error) {
+	smokeFailed = true;
+	throw error;
 } finally {
 	if (createdSandboxId) {
-		await expectMppx("cleanup DELETE /sandboxes/:id", `/sandboxes/${createdSandboxId}`, {
-			expected: [200, 204, 404],
-			method: "DELETE",
-		});
+		try {
+			await expectMppx("cleanup DELETE /sandboxes/:id", `/sandboxes/${createdSandboxId}`, {
+				expected: [200, 204, 404],
+				method: "DELETE",
+			});
+		} catch (error) {
+			cleanupError = error;
+			if (smokeFailed) {
+				console.error(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
 	}
 }
+
+if (cleanupError) throw cleanupError;
 
 console.log("Smoke test passed.");
 

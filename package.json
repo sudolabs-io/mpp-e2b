@@ -17,7 +17,7 @@
 		"deploy:vercel": "vercel --prod",
 		"deploy:cf": "wrangler deploy",
 		"smoke": "node scripts/smoke-e2b-proxy.mjs",
-		"smoke:local": "node scripts/smoke-e2b-proxy.mjs --base-url http://localhost:3001",
+		"smoke:local": "node scripts/smoke-e2b-proxy.mjs --base-url http://localhost:3000",
 		"smoke:prod": "node scripts/smoke-e2b-proxy.mjs"
 	},
 	"dependencies": {

@@ -225,9 +225,9 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 			}
 
 			// Enforce ownership on all sandbox-scoped routes
-			const sandboxIdMatch = path.match(/^\/sandboxes\/([^/]+)/);
-			if (sandboxIdMatch?.[1]) {
-				await assertSandboxOwned(apiKey, sandboxIdMatch[1], payer);
+			const sandboxId = sandboxIdFromPath(path);
+			if (sandboxId) {
+				await assertSandboxOwned(apiKey, sandboxId, payer);
 			}
 
 			return req;
@@ -240,7 +240,11 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 /** Extract sandbox ID from the request URL path. */
 function extractSandboxId(url: string): string {
 	const path = new URL(url).pathname;
-	const match = path.match(/\/sandboxes\/([^/]+)/);
-	if (!match?.[1]) throw new HTTPException(400, { message: "Missing sandbox ID" });
-	return match[1];
+	const sandboxId = sandboxIdFromPath(path);
+	if (!sandboxId) throw new HTTPException(400, { message: "Missing sandbox ID" });
+	return sandboxId;
+}
+
+function sandboxIdFromPath(path: string): string | null {
+	return path.match(/^\/(?:v2\/)?sandboxes\/([^/]+)/)?.[1] ?? null;
 }
