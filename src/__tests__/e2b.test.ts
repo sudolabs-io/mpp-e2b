@@ -341,6 +341,39 @@ describe("createE2bService dynamic pricing", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
+	it("rejects a non-owner's DELETE before charging (static route)", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ metadata: { "mpp-payer": payerTag("0xowner") } }), {
+				headers: { "content-type": "application/json" },
+				status: 200,
+			}),
+		);
+		// Record charges at invocation time — chargeOwned binds mppx.charge at construction.
+		const charged: string[] = [];
+		const recMppx: ServiceMppx = {
+			charge:
+				({ description }) =>
+				async () => {
+					charged.push(description);
+					return { challenge: new Response(null, { status: 402 }), status: 402 };
+				},
+		};
+		const service = createE2bService(env, recMppx);
+
+		await expect(
+			routeHandler(
+				service,
+				"DELETE /sandboxes/:sandboxID",
+			)(
+				new Request("https://proxy.test/sandboxes/sb_123", {
+					method: "DELETE",
+					headers: { "x-payer-address": "0xattacker" },
+				}),
+			),
+		).rejects.toThrow("Sandbox not found");
+		expect(charged).toEqual([]); // charge handler never invoked
+	});
+
 	it("prices a public template statically without a template lookup", async () => {
 		// Public templates aren't in GET /templates; their specs come from the pinned
 		// allowlist (base = 2/512), so no lookup happens.

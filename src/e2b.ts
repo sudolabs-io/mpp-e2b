@@ -216,6 +216,23 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 		return mppx.charge({ amount, description })(req);
 	};
 
+	/**
+	 * Flat charge gated by a pre-charge ownership check, so a non-owner is rejected
+	 * before being billed. Ownership is only checked once the payer is known (the paid
+	 * request); the unpaid 402 challenge passes through. mppx's payment metadata is
+	 * copied onto the wrapper so the OpenAPI doc still advertises the price.
+	 * (rewriteRequest re-checks ownership post-charge as a backstop / for future routes.)
+	 */
+	const chargeOwned = (amount: string, description: string): Service.IntentHandler => {
+		const charge = mppx.charge({ amount, description });
+		const handler: Service.IntentHandler = async (req) => {
+			const payer = getPayer(req);
+			if (payer) await assertSandboxOwned(apiKey, extractSandboxId(req.url), payer);
+			return charge(req);
+		};
+		return Object.assign(handler, { _internal: (charge as { _internal?: unknown })._internal });
+	};
+
 	const svc = custom("e2b", {
 		baseUrl: E2B_API_BASE,
 		title: "E2B",
@@ -229,46 +246,25 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 			// --- Sandboxes ---
 			"POST /sandboxes": createHandler,
 			"GET /sandboxes": mppx.charge({ amount: "0.0001", description: "List sandboxes" }),
-			"GET /sandboxes/:sandboxID": mppx.charge({
-				amount: "0.0001",
-				description: "Get sandbox",
-			}),
-			"DELETE /sandboxes/:sandboxID": mppx.charge({
-				amount: "0.001",
-				description: "Kill sandbox",
-			}),
+			"GET /sandboxes/:sandboxID": chargeOwned("0.0001", "Get sandbox"),
+			"DELETE /sandboxes/:sandboxID": chargeOwned("0.001", "Kill sandbox"),
 
 			// --- Sandbox lifecycle ---
-			"POST /sandboxes/:sandboxID/connect": mppx.charge({
-				amount: "0.01",
-				description: "Connect to sandbox (resume if paused)",
-			}),
-			"POST /sandboxes/:sandboxID/pause": mppx.charge({
-				amount: "0.001",
-				description: "Pause sandbox",
-			}),
+			"POST /sandboxes/:sandboxID/connect": chargeOwned(
+				"0.01",
+				"Connect to sandbox (resume if paused)",
+			),
+			"POST /sandboxes/:sandboxID/pause": chargeOwned("0.001", "Pause sandbox"),
 			"POST /sandboxes/:sandboxID/refreshes": refreshHandler,
 			"POST /sandboxes/:sandboxID/timeout": timeoutHandler,
 
 			// --- Snapshots ---
-			"POST /sandboxes/:sandboxID/snapshots": mppx.charge({
-				amount: "0.01",
-				description: "Create snapshot from sandbox",
-			}),
+			"POST /sandboxes/:sandboxID/snapshots": chargeOwned("0.01", "Create snapshot from sandbox"),
 
 			// --- Observability (nominal charge for authenticated access) ---
-			"GET /sandboxes/:sandboxID/logs": mppx.charge({
-				amount: "0.0001",
-				description: "Get sandbox logs",
-			}),
-			"GET /v2/sandboxes/:sandboxID/logs": mppx.charge({
-				amount: "0.0001",
-				description: "Get sandbox logs",
-			}),
-			"GET /sandboxes/:sandboxID/metrics": mppx.charge({
-				amount: "0.0001",
-				description: "Get sandbox metrics",
-			}),
+			"GET /sandboxes/:sandboxID/logs": chargeOwned("0.0001", "Get sandbox logs"),
+			"GET /v2/sandboxes/:sandboxID/logs": chargeOwned("0.0001", "Get sandbox logs"),
+			"GET /sandboxes/:sandboxID/metrics": chargeOwned("0.0001", "Get sandbox metrics"),
 		},
 		rewriteRequest: async (req, ctx) => {
 			const payer = getPayer(req);

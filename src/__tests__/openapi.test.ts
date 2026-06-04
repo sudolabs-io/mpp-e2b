@@ -59,6 +59,12 @@ describe("buildE2bOpenApi", () => {
 		expect(op.responses["402"]).toBeDefined();
 	});
 
+	it("keeps the flat price on ownership-wrapped routes (metadata preserved)", () => {
+		const op = buildDoc().paths["/sandboxes/:sandboxID"].delete;
+		expect(op["x-payment-info"].amount).toBe("1000"); // 0.001 * 1e6 — survives chargeOwned wrap
+		expect(op.responses["402"]).toBeDefined();
+	});
+
 	it("documents create with a required templateID and without per-request cpu/ram", () => {
 		const op = buildDoc().paths["/sandboxes"].post;
 		const schema = op.requestBody.content["application/json"].schema;
