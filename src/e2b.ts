@@ -37,8 +37,11 @@ type SandboxDetails = {
 };
 
 function positiveNumber(value: unknown, fallback: number, max: number): number {
-	const n = typeof value === "number" ? value : fallback;
-	if (!Number.isFinite(n) || n <= 0) {
+	// Omitted → default. Present but not a finite positive number (e.g. "abc", null,
+	// 0, negative) → reject BEFORE charging, so a caller isn't billed for a request
+	// E2B will reject anyway.
+	const n = value === undefined ? fallback : value;
+	if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
 		throw new HTTPException(400, { message: "Invalid numeric parameter" });
 	}
 	return Math.min(n, max);

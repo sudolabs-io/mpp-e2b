@@ -328,6 +328,19 @@ describe("createE2bService dynamic pricing", () => {
 		expect(fetchMock).not.toHaveBeenCalled(); // no template lookup needed
 	});
 
+	it("rejects a malformed timeout before charging", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await expect(createSandbox(service, { templateID: "base", timeout: "abc" })).rejects.toThrow(
+			"Invalid numeric parameter",
+		);
+
+		expect(calls).toEqual([]); // not charged
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("prices a public template statically without a template lookup", async () => {
 		// Public templates aren't in GET /templates; their specs come from the pinned
 		// allowlist (base = 2/512), so no lookup happens.
