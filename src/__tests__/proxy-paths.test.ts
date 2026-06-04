@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	createProxyRequest,
-	isOpenApiPath,
-	isServicePrefixedE2bPath,
-	shouldUseUnprefixedE2bPath,
-} from "../proxy-paths.js";
+import { createProxyRequest, isOpenApiPath, isServicePrefixedE2bPath } from "../proxy-paths.js";
 
 describe("isServicePrefixedE2bPath", () => {
 	it.each([
@@ -28,32 +23,28 @@ describe("isOpenApiPath", () => {
 	});
 });
 
-describe("shouldUseUnprefixedE2bPath", () => {
-	it.each([
-		["/sandboxes", true],
-		["/sandboxes/abc", true],
-		["/v2/sandboxes/abc/logs", true],
-		["/e2b/sandboxes", false],
-		["/openapi.json", false],
-	])("returns %s for %s", (pathname, expected) => {
-		expect(shouldUseUnprefixedE2bPath(pathname)).toBe(expected);
-	});
-});
-
 describe("createProxyRequest", () => {
-	it("prefixes sandbox routes with /e2b", () => {
-		const req = createProxyRequest(
-			"https://proxy.test/sandboxes",
-			new Request("https://proxy.test/sandboxes", { method: "GET" }),
-		);
-		expect(new URL(req.url).pathname).toBe("/e2b/sandboxes");
+	const proxyPath = (path: string) =>
+		new URL(
+			createProxyRequest(`https://proxy.test${path}`, new Request(`https://proxy.test${path}`)).url,
+		).pathname;
+
+	it.each([
+		["/sandboxes", "/e2b/sandboxes"],
+		["/sandboxes/sb_123", "/e2b/sandboxes/sb_123"],
+		["/v2/sandboxes/sb_123/logs", "/e2b/v2/sandboxes/sb_123/logs"],
+		// Block-list, not allow-list: a path that's hardcoded nowhere still maps through.
+		["/files/abc", "/e2b/files/abc"],
+	])("prefixes %s -> %s", (input, expected) => {
+		expect(proxyPath(input)).toBe(expected);
 	});
 
-	it("leaves unrelated paths unchanged", () => {
-		const req = createProxyRequest(
-			"https://proxy.test/openapi.json",
-			new Request("https://proxy.test/openapi.json", { method: "GET" }),
-		);
-		expect(new URL(req.url).pathname).toBe("/openapi.json");
+	it.each([
+		["/"],
+		["/openapi.json"],
+		["/llms.txt"],
+		["/e2b/sandboxes"],
+	])("leaves root/discovery/already-prefixed path %s unchanged", (input) => {
+		expect(proxyPath(input)).toBe(input);
 	});
 });
