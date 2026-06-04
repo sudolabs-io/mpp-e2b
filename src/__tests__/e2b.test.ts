@@ -175,6 +175,37 @@ describe("createE2bService dynamic pricing", () => {
 		expect(calls).toEqual([{ amount: "0.713856", description: "Extend sandbox - 600s" }]);
 	});
 
+	it("rejects a non-owner's /timeout before charging", async () => {
+		// The sandbox exists but belongs to a different payer; the caller (x-payer-address,
+		// i.e. the paid request) must be rejected before mppx.charge runs — not billed-then-404'd.
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					cpuCount: 2,
+					memoryMB: 512,
+					metadata: { "mpp-payer": payerTag("0xowner") },
+				}),
+				{ headers: { "content-type": "application/json" }, status: 200 },
+			),
+		);
+		const { build, calls } = recordingCharge();
+		const service = build(env);
+
+		await expect(
+			routeHandler(
+				service,
+				"POST /sandboxes/:sandboxID/timeout",
+			)(
+				new Request("https://proxy.test/sandboxes/sb_123/timeout", {
+					method: "POST",
+					headers: { "x-payer-address": "0xattacker", "content-type": "application/json" },
+					body: JSON.stringify({ timeout: 300 }),
+				}),
+			),
+		).rejects.toThrow("Sandbox not found");
+		expect(calls).toEqual([]); // not charged
+	});
+
 	it("rejects missing sandboxes before charging", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 404 }));
 		const { build, calls } = recordingCharge();

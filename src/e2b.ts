@@ -147,9 +147,22 @@ async function resolveCreateSpec(
 	});
 }
 
-async function getPricingSpec(apiKey: string, sandboxId: string): Promise<SandboxSpec> {
+async function getPricingSpec(
+	apiKey: string,
+	sandboxId: string,
+	payer: string | null,
+): Promise<SandboxSpec> {
 	const details = await getSandboxDetails(apiKey, sandboxId);
 	if (!details) throw new HTTPException(404, { message: "Sandbox not found" });
+
+	// Enforce ownership BEFORE the caller is charged, so a non-owner is rejected
+	// rather than billed-then-denied. The payer is only known once a credential is
+	// present (the paid request); on the unpaid 402 challenge it's null and there is
+	// nothing to check yet. (The claimed payer is not cryptographically verified —
+	// see payer.ts; binding to the verified payer needs the MPP identity extension.)
+	if (payer && details.metadata?.["mpp-payer"] !== payerTag(payer)) {
+		throw new HTTPException(404, { message: "Sandbox not found" });
+	}
 
 	// A running sandbox's SandboxDetail always carries its spec; if it somehow
 	// doesn't, fail closed rather than invent a price.
@@ -183,7 +196,7 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 	/** Dynamic pricing for TTL refresh — charges based on sandbox spec × added time. */
 	const refreshHandler: Service.IntentHandler = async (req: Request) => {
 		const sandboxId = extractSandboxId(req.url);
-		const spec = await getPricingSpec(apiKey, sandboxId);
+		const spec = await getPricingSpec(apiKey, sandboxId, getPayer(req));
 		const body = await jsonBody<{ duration?: number }>(req);
 		const duration = positiveNumber(body.duration, 300, MAX_TIMEOUT_S);
 		const { amount, description } = resolveExtendPrice(duration, spec);
@@ -193,7 +206,7 @@ export function createE2bService(env: Env, mppx: ServiceMppx): Service.Service {
 	/** Dynamic pricing for timeout set — charges based on sandbox spec × timeout. */
 	const timeoutHandler: Service.IntentHandler = async (req: Request) => {
 		const sandboxId = extractSandboxId(req.url);
-		const spec = await getPricingSpec(apiKey, sandboxId);
+		const spec = await getPricingSpec(apiKey, sandboxId, getPayer(req));
 		const body = await jsonBody<{ timeout?: number }>(req);
 		const timeout = positiveNumber(body.timeout, 300, MAX_TIMEOUT_S);
 		const { amount, description } = resolveExtendPrice(timeout, spec);
