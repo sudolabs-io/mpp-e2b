@@ -100,6 +100,28 @@ Other flags: `--base-url`, `--account`, `--rpc-url`, `--timeout`.
 | `PAYEE_ADDRESS` | Wallet address to receive payments |
 | `FEE_PAYER_PRIVATE_KEY` | Private key for gas sponsoring (optional) |
 | `TEMPO_ENV` | `tempo` (mainnet) or `moderato` (testnet) |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL for replay protection (see below) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
+
+### Replay protection store
+
+mppx records each consumed payment credential so it can't be replayed. That record must
+live in a **shared, persistent** store — an in-memory one is wiped per request on
+serverless and offers no real protection. Set `UPSTASH_REDIS_REST_URL` /
+`UPSTASH_REDIS_REST_TOKEN` (Upstash works on both Cloudflare and Vercel) **in production**.
+If unset, the proxy falls back to an in-memory store and logs a warning — acceptable for
+local dev only.
+
+**Test it locally without a cloud account** — `docker compose up -d` starts a real Redis
+behind the Upstash REST API, then point the vars at it:
+
+```bash
+UPSTASH_REDIS_REST_URL=http://localhost:8079
+UPSTASH_REDIS_REST_TOKEN=local_token
+```
+
+For deployments, create a free database at [upstash.com](https://upstash.com) and copy its
+REST URL/token into the Vercel project env (or `wrangler secret put` for Cloudflare).
 
 ### Tempo Environments
 

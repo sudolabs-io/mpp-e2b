@@ -21,6 +21,7 @@
 		"smoke:prod": "node scripts/smoke-e2b-proxy.js"
 	},
 	"dependencies": {
+		"@upstash/redis": "^1.38.0",
 		"hono": "^4.6.0",
 		"mppx": "^0.5.3",
 		"viem": "^2.47.6"

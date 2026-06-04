@@ -10,6 +10,10 @@ export interface Env {
 
 	// --- E2B ---
 	E2B_API_KEY: string;
+
+	// --- Replay-protection store (optional; falls back to in-memory if unset) ---
+	UPSTASH_REDIS_REST_URL?: string;
+	UPSTASH_REDIS_REST_TOKEN?: string;
 }
 
 type RuntimeEnv = Partial<Env> | undefined;
@@ -20,6 +24,8 @@ type EnvSource = {
 	MPPX_SECRET_KEY?: string;
 	FEE_PAYER_PRIVATE_KEY?: string;
 	E2B_API_KEY?: string;
+	UPSTASH_REDIS_REST_URL?: string;
+	UPSTASH_REDIS_REST_TOKEN?: string;
 };
 
 /** Build Env from Cloudflare bindings or Vercel/Node process.env. */
@@ -57,6 +63,8 @@ function envFromSource(source: EnvSource): Env {
 		MPPX_SECRET_KEY,
 		FEE_PAYER_PRIVATE_KEY,
 		E2B_API_KEY,
+		UPSTASH_REDIS_REST_URL: source.UPSTASH_REDIS_REST_URL,
+		UPSTASH_REDIS_REST_TOKEN: source.UPSTASH_REDIS_REST_TOKEN,
 	};
 }
 

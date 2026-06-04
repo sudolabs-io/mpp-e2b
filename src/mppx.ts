@@ -1,9 +1,10 @@
 import { HTTPException } from "hono/http-exception";
-import { Mppx, Store, tempo } from "mppx/server";
+import { Mppx, tempo } from "mppx/server";
 import type { Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { Addresses } from "viem/tempo";
 import type { Env } from "./env.js";
+import { resolveStore } from "./store.js";
 
 /** USDC.e token address on Tempo mainnet */
 const USDCE_ADDRESS = "0x20c000000000000000000000b9537d11c60e8b50";
@@ -18,7 +19,9 @@ export type ServiceMppx = {
 export function createMppx(env: Env) {
 	const isTestnet = env.TEMPO_ENV !== "tempo";
 	const currency = isTestnet ? Addresses.pathUsd : USDCE_ADDRESS;
-	const store = Store.memory();
+	// Shared, persistent replay-protection store (Upstash) — falls back to in-memory
+	// with a warning when unconfigured. See store.ts.
+	const store = resolveStore(env);
 
 	const feePayerAccount = env.FEE_PAYER_PRIVATE_KEY
 		? privateKeyToAccount(env.FEE_PAYER_PRIVATE_KEY as Hex)

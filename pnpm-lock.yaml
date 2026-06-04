@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@upstash/redis':
+        specifier: ^1.38.0
+        version: 1.38.0
       hono:
         specifier: ^4.6.0
         version: 4.12.12
@@ -1207,6 +1210,9 @@ packages:
 
   '@types/node@25.9.1':
     resolution: {integrity: sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==}
+
+  '@upstash/redis@1.38.0':
+    resolution: {integrity: sha512-wu+dZBptlLy0+MCUEoHmzrY/TnmgDey3+c7EbIGwrLqAvkP8yi5MWZHYGIFtAygmL4Bkz2TdFu+eU0vFPncIcg==}
 
   '@vercel/backends@0.8.4':
     resolution: {integrity: sha512-R7SOhU5/xcBe1hRS2VPDm27R7DF50bMFTijM5eNTWAH4Rsyv3y1kKDfCEYfeNmtaOX07o8lQfuq1Vbg+1lha0g==}
@@ -2453,6 +2459,9 @@ packages:
   uid-promise@1.0.0:
     resolution: {integrity: sha512-R8375j0qwXyIu/7R0tjdF06/sElHqbmdmWC9M2qQHpEVbvE4I5+38KJI7LUUmQMp7NVq4tKHiBMkT0NFM453Ig==}
 
+  uncrypto@0.1.3:
+    resolution: {integrity: sha512-Ql87qFHB3s/De2ClA9e0gsnS6zXG27SkTiSJwjCc9MebbfapQfuPzumMIUMi38ezPZVNFcHI9sUIepeQfw8J8Q==}
+
   undici-types@5.26.5:
     resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
 
@@ -3440,6 +3449,10 @@ snapshots:
   '@types/node@25.9.1':
     dependencies:
       undici-types: 7.24.6
+
+  '@upstash/redis@1.38.0':
+    dependencies:
+      uncrypto: 0.1.3
 
   '@vercel/backends@0.8.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(rollup@4.60.1)':
     dependencies:
@@ -4932,6 +4945,8 @@ snapshots:
   typescript@5.9.3: {}
 
   uid-promise@1.0.0: {}
+
+  uncrypto@0.1.3: {}
 
   undici-types@5.26.5: {}
 
