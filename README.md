@@ -103,11 +103,18 @@ Other flags: `--base-url`, `--account`, `--rpc-url`, `--timeout`.
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL for replay protection (see below) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 
-### Replay protection store
+### Replay protection
 
-mppx records each consumed payment credential so it can't be replayed. That record must
-live in a **shared, persistent** store — an in-memory one is wiped per request on
-serverless and offers no real protection. Set `UPSTASH_REDIS_REST_URL` /
+A payment credential proves "I paid for this request." Nothing stops a caller from
+**sending the same credential again** to get the service repeatedly off a single payment —
+that reuse is a *replay*. Per the [MPP spec](https://mpp.dev/protocol), a payment proof must
+be usable **exactly once**, so the server records every credential it accepts (by its
+payment hash) and rejects repeats. Without it, an agent could pay for one sandbox and then
+replay that payment to spin up many more for free (you'd eat the E2B cost). See
+[MPP → Prevent replay in production](https://mpp.dev/advanced/security).
+
+That record must live in a **shared, persistent** store — an in-memory one is wiped per
+request on serverless and offers no real protection. Set `UPSTASH_REDIS_REST_URL` /
 `UPSTASH_REDIS_REST_TOKEN` (Upstash works on both Cloudflare and Vercel) **in production**.
 If unset, the proxy falls back to an in-memory store and logs a warning — acceptable for
 local dev only.
