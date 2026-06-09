@@ -1,4 +1,6 @@
 node_modules/
 dist/
 .dev.vars
+.env.local
+.vercel
 .wrangler/

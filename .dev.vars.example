@@ -1,3 +1,6 @@
 MPPX_SECRET_KEY=your-mppx-secret-key
 E2B_API_KEY=e2b_your_api_key
 FEE_PAYER_PRIVATE_KEY=0x...
+# Replay-protection store (recommended in production; in-memory fallback otherwise)
+UPSTASH_REDIS_REST_URL=https://your-db.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-upstash-token
